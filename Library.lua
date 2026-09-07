@@ -373,6 +373,13 @@ local Templates = {
     Window = {
         Title = "No Title",
         Footer = "No Footer",
+        ProfileCard = {
+            Enabled = false,
+            UserId = 0,
+            DisplayName = "",
+            Username = "",
+            Height = 68,
+        },
 
         Position = UDim2.fromOffset(6, 6),
         Size = UDim2.fromOffset(720, 600),
@@ -10660,6 +10667,19 @@ function Library:CreateWindow(WindowInfo)
     local HasBackgroundImage = false
     local BottomBackground
     local FooterLabel
+    local ProfileCardFrame
+    local ProfileAvatar
+    local ProfileDisplayName
+    local ProfileUsername
+    local ProfileVisibilityButton
+    local ProfileVisibilityIcon
+    local ProfileVisible = true
+    local RefreshProfileCard
+    local ProfileUserId = 0
+    local ProfileNameText = ""
+    local ProfileUsernameText = ""
+    local ProfileCardHeight = 0
+    local SidebarBottomOffset = 70
     local TopBar
     local WindowSnapConfig = {
         Enabled = WindowInfo.Snapping,
@@ -11029,6 +11049,128 @@ function Library:CreateWindow(WindowInfo)
             Library:ApplyLucideIcon(WindowResizeIcon, ResizeIcon)
         end
 
+        --// Optional User Profile Card \\--
+        local ProfileCardInfo = WindowInfo.ProfileCard
+        if ProfileCardInfo and ProfileCardInfo.Enabled then
+            ProfileCardHeight = math.clamp(tonumber(ProfileCardInfo.Height) or 68, 60, 100)
+            SidebarBottomOffset = 70 + ProfileCardHeight
+
+            local RequestedUserId = tonumber(ProfileCardInfo.UserId)
+            ProfileUserId = (RequestedUserId and RequestedUserId > 0) and RequestedUserId or LocalPlayer.UserId
+            ProfileNameText = ProfileCardInfo.DisplayName
+            ProfileUsernameText = ProfileCardInfo.Username
+
+            if typeof(ProfileNameText) ~= "string" or ProfileNameText == "" then
+                ProfileNameText = LocalPlayer.DisplayName
+            end
+            if typeof(ProfileUsernameText) ~= "string" or ProfileUsernameText == "" then
+                ProfileUsernameText = LocalPlayer.Name
+            end
+
+            ProfileCardFrame = New("Frame", {
+                BackgroundColor3 = function()
+                    return Library:GetBetterColor(Library.Scheme.BackgroundColor, 4)
+                end,
+                Name = "ProfileCard",
+                Position = UDim2.new(
+                    0,
+                    8,
+                    1,
+                    -(20 + WindowInfo.CornerRadius + ProfileCardHeight - 4)
+                ),
+                Size = UDim2.new(0, math.max(40, InitialLeftWidth - 16), 0, ProfileCardHeight - 8),
+                Parent = MainFrame,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, math.min(WindowInfo.CornerRadius + 2, 10)),
+                Parent = ProfileCardFrame,
+            })
+            New("UIStroke", {
+                Color = "OutlineColor",
+                Transparency = 0.15,
+                Parent = ProfileCardFrame,
+            })
+
+            ProfileAvatar = New("ImageLabel", {
+                BackgroundColor3 = function()
+                    return Library:GetBetterColor(Library.Scheme.BackgroundColor, 8)
+                end,
+                Image = string.format(
+                    "rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150",
+                    ProfileUserId
+                ),
+                Position = UDim2.fromOffset(9, 9),
+                Size = UDim2.fromOffset(42, 42),
+                Parent = ProfileCardFrame,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(1, 0),
+                Parent = ProfileAvatar,
+            })
+
+            ProfileDisplayName = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(60, 8),
+                Size = UDim2.new(1, -98, 0, 20),
+                Text = ProfileNameText,
+                TextSize = 14,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                Parent = ProfileCardFrame,
+            })
+
+            ProfileUsername = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(60, 30),
+                Size = UDim2.new(1, -98, 0, 18),
+                Text = "@" .. ProfileUsernameText,
+                TextSize = 12,
+                TextTransparency = 0.35,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                Parent = ProfileCardFrame,
+            })
+
+            ProfileVisibilityButton = New("TextButton", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, -38, 0.5, -16),
+                Size = UDim2.fromOffset(30, 30),
+                Text = "",
+                Parent = ProfileCardFrame,
+            })
+            ProfileVisibilityIcon = New("ImageLabel", {
+                BackgroundTransparency = 1,
+                ImageColor3 = "FontColor",
+                ImageTransparency = 0.2,
+                Position = UDim2.fromOffset(6, 6),
+                Size = UDim2.fromOffset(18, 18),
+                Parent = ProfileVisibilityButton,
+            })
+
+            ProfileVisible = true
+            RefreshProfileCard = function()
+                if not ProfileUsername then
+                    return
+                end
+
+                ProfileUsername.Text = ProfileVisible and ("@" .. ProfileUsernameText) or "@••••••"
+
+                if ProfileVisibilityIcon then
+                    local IconName = ProfileVisible and "eye-off" or "eye"
+                    local Icon = Library:GetIcon(IconName)
+                    if Icon then
+                        Library:ApplyLucideIcon(ProfileVisibilityIcon, Icon)
+                    end
+                end
+            end
+
+            Library:GiveSignal(ProfileVisibilityButton.Activated:Connect(function()
+                ProfileVisible = not ProfileVisible
+                RefreshProfileCard()
+            end))
+            RefreshProfileCard()
+        end
+
         --// Tabs \\--
         Tabs = New("ScrollingFrame", {
             AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -11036,7 +11178,7 @@ function Library:CreateWindow(WindowInfo)
             CanvasSize = UDim2.fromScale(0, 0),
             Position = UDim2.fromOffset(0, 49),
             ScrollBarThickness = 0,
-            Size = UDim2.new(0, InitialLeftWidth, 1, -70),
+            Size = UDim2.new(0, InitialLeftWidth, 1, -SidebarBottomOffset),
             Parent = MainFrame,
         })
         New("UIListLayout", {
@@ -11155,6 +11297,45 @@ function Library:CreateWindow(WindowInfo)
 
         FooterLabel.Text = Footer
         WindowInfo.Footer = Footer
+    end
+
+    function Window:SetProfileCard(Info)
+        assert(typeof(Info) == "table", "Expected table for profile card got: " .. typeof(Info))
+
+        if not ProfileCardFrame then
+            return
+        end
+
+        if Info.UserId ~= nil then
+            local RequestedUserId = tonumber(Info.UserId)
+            if RequestedUserId and RequestedUserId > 0 then
+                ProfileUserId = RequestedUserId
+            end
+            ProfileAvatar.Image = string.format(
+                "rbxthumb://type=AvatarHeadShot&id=%d&w=150&h=150",
+                ProfileUserId
+            )
+        end
+
+        if typeof(Info.DisplayName) == "string" and Info.DisplayName ~= "" then
+            ProfileNameText = Info.DisplayName
+            ProfileDisplayName.Text = ProfileNameText
+        end
+
+        if typeof(Info.Username) == "string" and Info.Username ~= "" then
+            ProfileUsernameText = Info.Username
+            if RefreshProfileCard then
+                RefreshProfileCard()
+            end
+        end
+
+        if Info.Visible ~= nil then
+            ProfileCardFrame.Visible = Info.Visible == true
+        end
+
+        WindowInfo.ProfileCard.UserId = ProfileUserId
+        WindowInfo.ProfileCard.DisplayName = ProfileNameText
+        WindowInfo.ProfileCard.Username = ProfileUsernameText
     end
 
     function Window:SetAlwaysOnTop(Enabled: boolean)
@@ -11303,6 +11484,9 @@ function Library:CreateWindow(WindowInfo)
         if not WindowInfo.Icon then
             WindowIcon.Visible = IsCompact
         end
+        if ProfileCardFrame then
+            ProfileCardFrame.Visible = not IsCompact
+        end
 
         for _, Button in Library.TabButtons do
             if not Button.Icon then
@@ -11337,8 +11521,11 @@ function Library:CreateWindow(WindowInfo)
 
         TitleHolder.Size = UDim2.new(0, Width, 1, 0)
         RightWrapper.Size = UDim2.new(1, -Width - 57 - 1, 1, -16)
-        Tabs.Size = UDim2.new(0, Width, 1, -70)
+        Tabs.Size = UDim2.new(0, Width, 1, -SidebarBottomOffset)
         Container.Size = UDim2.new(1, -Width - 1, 1, -70)
+        if ProfileCardFrame then
+            ProfileCardFrame.Size = UDim2.new(0, math.max(40, Width - 16), 0, ProfileCardHeight - 8)
+        end
 
         if WindowInfo.EnableCompacting then
             ApplyCompact()
